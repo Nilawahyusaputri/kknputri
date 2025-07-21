@@ -46,7 +46,7 @@ def klasifikasi_hfa(z):
         return "Risiko Stunting", "red", "Perbanyak makan bergizi, minum susu, dan tidur cukup. Ajak orang tua untuk periksa ke puskesmas."
     elif -2 <= z < -1:
         return "Perlu Perhatian", "orange", "Ayo makan lebih seimbang dan aktif bergerak. Tambah protein dan sayur setiap hari!"
-    elif -1 <= z <= 2.0:
+    elif -1 <= z <= 3:
         return "Normal & Sehat", "green", "Keren! Pertahankan pola makan sehat dan gaya hidup aktif!"
     else:
         return "Risiko Overgrowth", "blue", "Kurangi makanan manis dan berminyak. Seimbangkan antara makan dan olahraga ya!"
