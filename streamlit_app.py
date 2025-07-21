@@ -2,34 +2,37 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, date
 from fpdf import FPDF
 import os
 
-# ---------------------------
+# ===========================
 # Fungsi bantu
-# ---------------------------
-def hitung_umur(tgl_lahir):
-    today = datetime.today()
-    umur = today - tgl_lahir
-    tahun = umur.days // 365
-    bulan = (umur.days % 365) // 30
-    hari = (umur.days % 365) % 30
-    total_bulan = tahun * 12 + bulan
-    return tahun, bulan, hari, total_bulan
+# ===========================
+def hitung_umur(tgl_lahir: str):
+    tgl_lahir = datetime.strptime(tgl_lahir, "%Y-%m-%d")
+    today = date.today()
+    delta = today - tgl_lahir.date()
+    tahun = delta.days // 365
+    bulan = (delta.days % 365) // 30
+    hari = (delta.days % 365) % 30
+    umur_bulan = delta.days // 30
+    return tahun, bulan, hari, umur_bulan
 
-def hitung_z_score(nilai, L, M, S):
-    if L == 0:
-        z = np.log(nilai / M) / S
+def load_lms(gender):
+    if gender == 'Laki-laki':
+        df = pd.read_csv("data/hfa_boys.csv")
     else:
-        z = ((nilai / M) ** L - 1) / (L * S)
-    return z
+        df = pd.read_csv("data/hfa_girls.csv")
+    return df[['Month', 'L', 'M', 'S']]
 
-def get_lms_row(df, umur_bulan):
-    closest = df.iloc[(df['Month'] - umur_bulan).abs().argsort()[:1]]
-    return closest.iloc[0]
+def z_score(nilai, L, M, S):
+    if L == 0:
+        return np.log(nilai / M) / S
+    else:
+        return ((nilai / M) ** L - 1) / (L * S)
 
-def tentukan_status_hfa(z):
+def get_status_hfa(z):
     if z < -3:
         return "Stunting Berat"
     elif z < -2:
@@ -37,85 +40,104 @@ def tentukan_status_hfa(z):
     else:
         return "Normal"
 
-def muat_lms_data(gender):
-    if gender == 'Laki-laki':
-        return pd.read_csv("data/hfa_boys.csv")
+def get_avatar(gender, status):
+    base = gender.lower().replace("-", "")
+    status = status.lower().replace(" ", "_")
+    file_name = f"avatars/{base}_{status}.png"
+    return file_name if os.path.exists(file_name) else None
+
+def saran_status(status):
+    if status == "Stunting Berat":
+        return "Segera konsultasikan dengan petugas kesehatan. Berikan asupan gizi tinggi dan seimbang."
+    elif status == "Stunting":
+        return "Perhatikan pola makan dan asupan gizi anak. Tingkatkan konsumsi makanan kaya protein dan vitamin."
     else:
-        return pd.read_csv("data/hfa_girls.csv")
+        return "Pertahankan pola hidup sehat dan gizi seimbang agar tumbuh kembang tetap optimal."
 
-def avatar_path(gender, status):
-    key = f"{gender.lower()}_{status.lower().replace(' ', '_')}"
-    return f"avatars/{key}.png"
-
-def buat_pdf(data):
+def buat_pdf(nama, kelas, umur, tinggi, gender, status, saran):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt="Hasil Deteksi Stunting", ln=True, align='C')
     pdf.ln(10)
+    pdf.cell(200, 10, txt=f"Nama: {nama}", ln=True)
+    pdf.cell(200, 10, txt=f"Kelas: {kelas}", ln=True)
+    pdf.cell(200, 10, txt=f"Umur: {umur}", ln=True)
+    pdf.cell(200, 10, txt=f"Jenis Kelamin: {gender}", ln=True)
+    pdf.cell(200, 10, txt=f"Tinggi Badan: {tinggi} cm", ln=True)
+    pdf.cell(200, 10, txt=f"Status HFA: {status}", ln=True)
+    pdf.multi_cell(0, 10, txt=f"Saran: {saran}")
+    pdf_path = f"hasil_{nama.replace(' ', '_')}.pdf"
+    pdf.output(pdf_path)
+    return pdf_path
 
-    for key, val in data.items():
-        pdf.cell(200, 10, txt=f"{key}: {val}", ln=True)
-
-    out_path = f"hasil_{data['Nama']}.pdf"
-    pdf.output(out_path)
-    return out_path
-
-# ---------------------------
+# ===========================
 # Streamlit App
-# ---------------------------
-st.set_page_config(page_title="Deteksi Stunting SD", layout="centered")
-st.title("📏 Deteksi Stunting untuk Anak SD")
+# ===========================
+st.set_page_config(page_title="Deteksi Stunting Anak SD", layout="centered")
+st.title("📊 Deteksi Stunting Anak SD")
 
-st.markdown("---")
-st.markdown("### Masukkan Data Anak")
+with st.form("form_input"):
+    nama = st.text_input("Nama Anak")
+    kelas = st.selectbox("Kelas", ["1", "2", "3", "4", "5", "6"])
+    gender = st.radio("Jenis Kelamin", ["Laki-laki", "Perempuan"])
+    tgl_lahir = st.date_input("Tanggal Lahir", min_value=date(2010,1,1), max_value=date.today())
+    tinggi = st.number_input("Tinggi Badan (cm)", min_value=50.0, max_value=200.0, step=0.1)
+    submit = st.form_submit_button("Deteksi")
 
-nama = st.text_input("Nama Anak")
-kls = st.selectbox("Kelas", ["1", "2", "3", "4", "5", "6"])
-gender = st.radio("Jenis Kelamin", ["Laki-laki", "Perempuan"], horizontal=True)
-tgl_lahir = st.date_input("Tanggal Lahir")
-tinggi = st.number_input("Tinggi Badan Anak (cm)", min_value=50.0, max_value=200.0, step=0.1)
+if submit:
+    tahun, bulan, hari, umur_bulan = hitung_umur(str(tgl_lahir))
+    umur_str = f"{tahun} tahun {bulan} bulan {hari} hari"
+    lms_data = load_lms(gender)
+    row = lms_data[lms_data['Month'] == umur_bulan]
 
-if st.button("🔍 Deteksi Stunting"):
-    if nama and tgl_lahir and tinggi:
-        tahun, bulan, hari, umur_bulan = hitung_umur(tgl_lahir)
-        df_lms = muat_lms_data(gender)
-        row = get_lms_row(df_lms, umur_bulan)
-
-        z_hfa = hitung_z_score(tinggi, row['L'], row['M'], row['S'])
-        status = tentukan_status_hfa(z_hfa)
-
-        st.success(f"Status: {status} (Z-score = {z_hfa:.2f})")
-
-        # Tampilkan avatar
-        path = avatar_path(gender, status)
-        if os.path.exists(path):
-            st.image(path, width=200)
-
-        # Saran
-        st.markdown("### 💡 Saran dan Tips")
-        if status == "Normal":
-            st.info("Anak tumbuh dengan baik. Pertahankan pola makan sehat dan rutin aktivitas fisik!")
-        elif status == "Stunting":
-            st.warning("Anak mengalami stunting. Perbaiki pola makan, tambahkan protein hewani, dan kunjungi posyandu/tenaga kesehatan.")
-        else:
-            st.error("Anak mengalami stunting berat. Butuh intervensi segera dan pemantauan pertumbuhan.")
-
-        # Simpan hasil
-        hasil_data = {
-            "Nama": nama,
-            "Kelas": kls,
-            "Jenis Kelamin": gender,
-            "Tgl Lahir": str(tgl_lahir),
-            "Umur": f"{tahun} th {bulan} bln",
-            "Tinggi": f"{tinggi} cm",
-            "Z-score HFA": f"{z_hfa:.2f}",
-            "Status": status
-        }
-
-        if st.checkbox("📄 Download Hasil dalam PDF"):
-            pdf_path = buat_pdf(hasil_data)
-            with open(pdf_path, "rb") as f:
-                st.download_button("📥 Unduh PDF", data=f, file_name=pdf_path)
+    if row.empty:
+        st.error("Umur anak di luar rentang referensi WHO.")
     else:
-        st.error("Lengkapi semua data terlebih dahulu.")
+        L = float(row['L'].values[0])
+        M = float(row['M'].values[0])
+        S = float(row['S'].values[0])
+        z = z_score(tinggi, L, M, S)
+        status = get_status_hfa(z)
+        saran = saran_status(status)
+
+        col1, col2 = st.columns([1,2])
+        with col1:
+            avatar = get_avatar(gender, status)
+            if avatar:
+                st.image(avatar, width=150)
+        with col2:
+            st.subheader(f"Status: {status}")
+            st.markdown(f"**Umur:** {umur_str}")
+            st.markdown(f"**Z-Score HFA:** {z:.2f}")
+            st.markdown(f"**Saran:** {saran}")
+
+        # Simpan hasil ke tabel global
+        if "hasil_data" not in st.session_state:
+            st.session_state.hasil_data = []
+
+        st.session_state.hasil_data.append({
+            "Nama": nama,
+            "Kelas": kelas,
+            "Jenis Kelamin": gender,
+            "Umur": umur_str,
+            "Tinggi": tinggi,
+            "Z-score HFA": round(z, 2),
+            "Status": status
+        })
+
+        pdf_path = buat_pdf(nama, kelas, umur_str, tinggi, gender, status, saran)
+        with open(pdf_path, "rb") as f:
+            st.download_button("📄 Unduh Hasil PDF", f, file_name=pdf_path)
+
+if "hasil_data" in st.session_state:
+    st.subheader("📋 Data Anak yang Telah Diperiksa")
+    df = pd.DataFrame(st.session_state.hasil_data)
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("📊 Grafik Berdasarkan Status")
+    fig, ax = plt.subplots()
+    df["Status"].value_counts().plot(kind="bar", color="skyblue", ax=ax)
+    ax.set_ylabel("Jumlah Anak")
+    ax.set_title("Distribusi Status HFA")
+    st.pyplot(fig)
