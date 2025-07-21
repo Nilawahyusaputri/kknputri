@@ -9,6 +9,7 @@ import os
 st.set_page_config(page_title="Deteksi Stunting SD", layout="centered")
 st.title("📏 Deteksi Stunting untuk Anak SD")
 
+# Fungsi hitung umur lengkap
 def hitung_umur(tgl_lahir):
     today = datetime.date.today()
     umur = today - tgl_lahir
@@ -18,6 +19,7 @@ def hitung_umur(tgl_lahir):
     umur_bulan = tahun * 12 + bulan
     return tahun, bulan, hari, umur_bulan
 
+# Fungsi load LMS dari Excel
 def load_lms(gender):
     if gender == "Laki-laki":
         df = pd.read_excel("data/hfa-boys-z-who-2007-exp.xlsx")
@@ -26,6 +28,7 @@ def load_lms(gender):
     df = df.rename(columns={"Month": "UmurBulan"})
     return df
 
+# Fungsi hitung z-score tinggi badan untuk umur (HFA)
 def hitung_zscore(umur_bulan, tinggi, gender):
     lms_df = load_lms(gender)
     row = lms_df[lms_df["UmurBulan"] == umur_bulan]
@@ -37,31 +40,18 @@ def hitung_zscore(umur_bulan, tinggi, gender):
     z = ((tinggi / M)**L - 1) / (L * S)
     return round(z, 2)
 
+# Fungsi klasifikasi HFA
 def klasifikasi_hfa(z):
     if z < -2:
-        return "Risiko Stunting", "stunting"
+        return "Risiko Stunting", "red", "Perbanyak makan bergizi dan tidur cukup. Konsultasikan dengan guru atau puskesmas."
     elif -2 <= z < -1:
-        return "Perlu Perhatian", "perlu"
-    elif -1 <= z <= 2:
-        return "Normal & Sehat", "normal"
+        return "Perlu Perhatian", "orange", "Jaga pola makan sehat dan aktif bermain. Ayo tambah buah dan protein!"
+    elif -1 <= z <= 1:
+        return "Normal & Sehat", "green", "Pertahankan pola makan bergizi dan rutin bergerak. Hebat!"
     else:
-        return "Risiko Overgrowth", "tinggi"
+        return "Risiko Overgrowth", "blue", "Ayo imbangi makan sehat dan aktivitas fisik. Kurangi makanan manis dan berminyak."
 
-def saran_tips(status):
-    if status == "Risiko Stunting":
-        warna = "red"
-        tips = "Perbanyak konsumsi makanan tinggi protein seperti telur, ikan, tempe, dan susu. Rutin periksa ke posyandu atau puskesmas."
-    elif status == "Perlu Perhatian":
-        warna = "yellow"
-        tips = "Tingkatkan asupan nutrisi harian, terutama zat besi, kalsium, dan vitamin. Ajak anak bermain di luar dan tidur cukup."
-    elif status == "Normal & Sehat":
-        warna = "green"
-        tips = "Pertahankan pola makan bergizi seimbang dan aktivitas fisik yang cukup. Kamu hebat!"
-    else:  # Risiko Overgrowth
-        warna = "orange"
-        tips = "Perbanyak makan buah, sayur, dan batasi makanan tinggi gula. Tetap aktif dan sehat ya!"
-    return warna, tips
-
+# Fungsi buat PDF
 def buat_pdf(data):
     pdf = FPDF()
     pdf.add_page()
@@ -75,6 +65,7 @@ def buat_pdf(data):
     pdf.output(nama_file)
     return nama_file
 
+# Input Data Anak
 with st.form("form_anak"):
     nama = st.text_input("Nama Anak")
     tgl_lahir = st.date_input("Tanggal Lahir")
@@ -84,9 +75,11 @@ with st.form("form_anak"):
     kelas = st.text_input("Kelas")
     submit = st.form_submit_button("Deteksi")
 
+# Tempat penyimpanan hasil
 if "data_anak" not in st.session_state:
     st.session_state.data_anak = []
 
+# Proses jika tombol ditekan
 if submit:
     tahun, bulan, hari, umur_bulan = hitung_umur(tgl_lahir)
     z = hitung_zscore(umur_bulan, tinggi, gender)
@@ -94,27 +87,28 @@ if submit:
     if z is None:
         st.warning("Umur belum tersedia dalam standar WHO.")
     else:
-        status, kategori = klasifikasi_hfa(z)
-        warna, tips = saran_tips(status)
+        status, warna, tips = klasifikasi_hfa(z)
 
         st.subheader("📊 Hasil Analisis")
-        st.write(f"**Umur:** {tahun} tahun {bulan} bulan {hari} hari")
+        st.markdown(f"**Umur:** {tahun} tahun {bulan} bulan {hari} hari")
         st.write(f"**Z-score:** {z}")
-        st.markdown(f"<div style='background-color:{warna}; padding:10px; border-radius:10px'><b>Status:</b> {status}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='background-color:{warna}; padding:10px; border-radius:10px; color:white;'>"
+            f"<b>Status:</b> {status}<br/><b>Tips:</b> {tips}</div>",
+            unsafe_allow_html=True
+        )
 
-        avatar_path = f"avatars/{kategori}_{'boy' if gender=='Laki-laki' else 'girl'}.png"
+        # Avatar berdasarkan status dan gender
+        avatar_path = f"avatars/{status.split()[0].lower()}_{'boy' if gender=='Laki-laki' else 'girl'}.png"
         if os.path.exists(avatar_path):
             st.image(avatar_path, width=250, caption="Gambaran Anak")
         else:
             st.info("[Avatar tidak tersedia]")
 
-        st.markdown(f"<div style='background-color:#f0f0f0; padding:12px; border-radius:10px'><b>Tips Sehat:</b><br>{tips}</div>", unsafe_allow_html=True)
-
         hasil_data = {
             "Nama Anak": nama,
             "Tanggal Lahir": tgl_lahir.strftime("%Y-%m-%d"),
             "Jenis Kelamin": gender,
-            "Umur": f"{tahun} tahun {bulan} bulan {hari} hari",
             "Umur (bulan)": umur_bulan,
             "Tinggi Badan (cm)": tinggi,
             "Berat Badan (kg)": berat,
@@ -125,11 +119,12 @@ if submit:
 
         st.session_state.data_anak.append(hasil_data)
 
+        # Buat PDF individual
         pdf_path = buat_pdf(hasil_data)
         with open(pdf_path, "rb") as f:
             st.download_button("📥 Download PDF Hasil Anak Ini", f, file_name=os.path.basename(pdf_path))
 
-# Data Semua Anak
+# Tampilkan Data Semua Anak
 if st.session_state.data_anak:
     st.subheader("📋 Data Semua Anak yang Sudah Diperiksa")
     df_all = pd.DataFrame(st.session_state.data_anak)
@@ -137,3 +132,7 @@ if st.session_state.data_anak:
 
     csv = df_all.to_csv(index=False).encode("utf-8")
     st.download_button("📥 Download Semua Data (CSV)", csv, file_name="data_semua_anak.csv", mime="text/csv")
+
+    st.subheader("📈 Visualisasi Data Anak Berdasarkan Kelas dan Jenis Kelamin")
+    kelas_gb = df_all.groupby(["Kelas", "Jenis Kelamin", "Status"]).size().unstack(fill_value=0)
+    st.bar_chart(kelas_gb)
