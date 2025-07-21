@@ -1,13 +1,8 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import datetime
-import matplotlib.pyplot as plt
+import altair as alt
 from fpdf import FPDF
-import os
-
-st.set_page_config(page_title="Deteksi Stunting SD", layout="centered")
-st.title("📏 Deteksi Stunting untuk Anak SD")
 
 # Fungsi hitung umur lengkap
 def hitung_umur(tgl_lahir):
@@ -16,123 +11,129 @@ def hitung_umur(tgl_lahir):
     tahun = umur.days // 365
     bulan = (umur.days % 365) // 30
     hari = (umur.days % 365) % 30
-    umur_bulan = tahun * 12 + bulan
+    umur_bulan = round(umur.days / 30.4375, 1)
     return tahun, bulan, hari, umur_bulan
 
-# Fungsi load LMS dari Excel
-def load_lms(gender):
+# Fungsi ambil data WHO
+def load_data_who(gender):
     if gender == "Laki-laki":
-        df = pd.read_excel("data/hfa-boys-z-who-2007-exp.xlsx")
+        return pd.read_excel("hfa-boys-z-who-2007-exp.xlsx")
     else:
-        df = pd.read_excel("data/hfa-girls-z-who-2007-exp.xlsx")
-    df = df.rename(columns={"Month": "UmurBulan"})
-    return df
+        return pd.read_excel("hfa-girls-z-who-2007-exp.xlsx")
 
-# Fungsi hitung z-score tinggi badan untuk umur (HFA)
-def hitung_zscore(umur_bulan, tinggi, gender):
-    lms_df = load_lms(gender)
-    row = lms_df[lms_df["UmurBulan"] == umur_bulan]
-    if row.empty:
-        return None
-    L = float(row["L"])
-    M = float(row["M"])
-    S = float(row["S"])
-    z = ((tinggi / M)**L - 1) / (L * S)
-    return round(z, 2)
-
-# Fungsi klasifikasi HFA
-def klasifikasi_hfa(z):
-    if z < -2:
-        return "Risiko Stunting", "red", "Perbanyak makan bergizi dan tidur cukup. Konsultasikan dengan guru atau puskesmas."
-    elif -2 <= z < -1:
-        return "Perlu Perhatian", "orange", "Jaga pola makan sehat dan aktif bermain. Ayo tambah buah dan protein!"
-    elif -1 <= z <= 1:
-        return "Normal & Sehat", "green", "Pertahankan pola makan bergizi dan rutin bergerak. Hebat!"
+# Fungsi analisis status
+def analisis_status(tb, umur_bulan, data_who):
+    if umur_bulan < 24 or umur_bulan > 228:
+        return "Umur di luar jangkauan WHO", "⚠️"
+    df = data_who[data_who['Month'] == round(umur_bulan)]
+    if df.empty:
+        return "Data tidak ditemukan", "❓"
+    row = df.iloc[0]
+    if tb < row['-2SD']:
+        return "Risiko Stunting", "🚨"
+    elif tb < row['-1SD']:
+        return "Perlu Perhatian", "⚠️"
+    elif tb <= row['+1SD']:
+        return "Normal & Sehat", "✅"
     else:
-        return "Risiko Overgrowth", "blue", "Ayo imbangi makan sehat dan aktivitas fisik. Kurangi makanan manis dan berminyak."
+        return "Risiko Overgrowth", "📈"
 
-# Fungsi buat PDF
+# Fungsi saran bergizi
+def get_saran(status):
+    saran = {
+        "Risiko Stunting": "Perbanyak asupan protein, sayur dan buah. Pantau pertumbuhan secara rutin.",
+        "Perlu Perhatian": "Perbaiki pola makan dan tidur. Konsumsi makanan sehat seimbang.",
+        "Normal & Sehat": "Pertahankan pola hidup sehat dan rutin olahraga.",
+        "Risiko Overgrowth": "Batasi gula & makanan berlemak. Aktif bergerak dan makan teratur.",
+    }
+    return saran.get(status, "")
+
+# PDF Generator
 def buat_pdf(data):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Hasil Deteksi Stunting Anak", ln=True, align="C")
-    pdf.ln(10)
-    for key, value in data.items():
-        pdf.cell(200, 10, txt=f"{key}: {value}", ln=True)
-    os.makedirs("pdf", exist_ok=True)
-    nama_file = f"pdf/Hasil_{data['Nama Anak'].replace(' ', '_')}.pdf"
-    pdf.output(nama_file)
-    return nama_file
+    for key, val in data.items():
+        pdf.cell(200, 10, txt=f"{key}: {val}", ln=True)
+    return pdf.output(dest='S').encode('latin1')
 
-# Input Data Anak
-with st.form("form_anak"):
-    nama = st.text_input("Nama Anak")
-    tgl_lahir = st.date_input("Tanggal Lahir")
-    gender = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
-    tinggi = st.number_input("Tinggi Badan (cm)", min_value=50.0, max_value=200.0)
-    berat = st.number_input("Berat Badan (kg)", min_value=5.0, max_value=100.0)
-    kelas = st.text_input("Kelas")
-    submit = st.form_submit_button("Deteksi")
+# Tampilan Streamlit
+st.set_page_config(page_title="Deteksi Stunting Anak", layout="centered")
+st.title("📏 Deteksi Pertumbuhan Anak SD")
+st.markdown("Isi data berikut untuk mengetahui status pertumbuhan anak berdasarkan standar WHO.")
 
-# Tempat penyimpanan hasil
-if "data_anak" not in st.session_state:
-    st.session_state.data_anak = []
+nama = st.text_input("Nama Anak")
+tgl_lahir = st.date_input("Tanggal Lahir", min_value=datetime.date(2000,1,1), max_value=datetime.date.today())
+gender = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
+kelas = st.text_input("Kelas")
+tinggi = st.number_input("Tinggi Badan (cm)", min_value=30.0, max_value=200.0)
+berat = st.number_input("Berat Badan (kg)", min_value=5.0, max_value=100.0)
 
-# Proses jika tombol ditekan
-if submit:
-    tahun, bulan, hari, umur_bulan = hitung_umur(tgl_lahir)
-    z = hitung_zscore(umur_bulan, tinggi, gender)
+data_file = "data_anak.csv"
 
-    if z is None:
-        st.warning("Umur belum tersedia dalam standar WHO.")
-    else:
-        status, warna, tips = klasifikasi_hfa(z)
+if st.button("🔍 Analisis"):
+    if nama and kelas:
+        tahun, bulan, hari, umur_bulan = hitung_umur(tgl_lahir)
+        umur_text = f"{tahun} tahun, {bulan} bulan, {hari} hari"
+        data_who = load_data_who(gender)
+        status, ikon = analisis_status(tinggi, umur_bulan, data_who)
+        saran = get_saran(status)
 
-        st.subheader("📊 Hasil Analisis")
-        st.markdown(f"**Umur:** {tahun} tahun {bulan} bulan {hari} hari")
-        st.write(f"**Z-score:** {z}")
+        warna = {
+            "Risiko Stunting": "#FF6961",
+            "Perlu Perhatian": "#FFD700",
+            "Normal & Sehat": "#77DD77",
+            "Risiko Overgrowth": "#84B6F4"
+        }
+
+        st.markdown(f"### Hasil Analisis: {ikon} **{status}**")
+        st.markdown(f"🗓️ Umur: **{umur_text}**  \n🍱 Saran: *{saran}*")
         st.markdown(
-            f"<div style='background-color:{warna}; padding:10px; border-radius:10px; color:white;'>"
-            f"<b>Status:</b> {status}<br/><b>Tips:</b> {tips}</div>",
+            f'<div style="background-color:{warna.get(status)};padding:10px;border-radius:10px;color:black;"><b>{status}</b><br>{saran}</div>',
             unsafe_allow_html=True
         )
 
-        # Avatar berdasarkan status dan gender
-        avatar_path = f"avatars/{status.split()[0].lower()}_{'boy' if gender=='Laki-laki' else 'girl'}.png"
-        if os.path.exists(avatar_path):
-            st.image(avatar_path, width=250, caption="Gambaran Anak")
-        else:
-            st.info("[Avatar tidak tersedia]")
+        # Simpan ke data
+        new_data = pd.DataFrame([{
+            "Nama": nama, "Tanggal Lahir": tgl_lahir, "Umur": umur_text,
+            "Jenis Kelamin": gender, "Kelas": kelas,
+            "Tinggi (cm)": tinggi, "Berat (kg)": berat,
+            "Status": status, "Saran": saran
+        }])
+        try:
+            existing = pd.read_csv(data_file)
+            all_data = pd.concat([existing, new_data], ignore_index=True)
+        except FileNotFoundError:
+            all_data = new_data
+        all_data.to_csv(data_file, index=False)
 
-        hasil_data = {
-            "Nama Anak": nama,
-            "Tanggal Lahir": tgl_lahir.strftime("%Y-%m-%d"),
-            "Jenis Kelamin": gender,
-            "Umur (bulan)": umur_bulan,
-            "Tinggi Badan (cm)": tinggi,
-            "Berat Badan (kg)": berat,
-            "Kelas": kelas,
-            "Z-score": z,
-            "Status": status
-        }
+        # Download PDF
+        pdf_binary = buat_pdf(new_data.iloc[0].to_dict())
+        st.download_button("📄 Download Hasil PDF", data=pdf_binary, file_name=f"{nama}_hasil.pdf")
 
-        st.session_state.data_anak.append(hasil_data)
+# Unduh semua data CSV
+if st.button("📥 Download Semua Data CSV"):
+    try:
+        df_all = pd.read_csv(data_file)
+        st.download_button("📊 Unduh Data CSV", data=df_all.to_csv(index=False), file_name="semua_data_anak.csv")
+    except FileNotFoundError:
+        st.error("Belum ada data disimpan.")
 
-        # Buat PDF individual
-        pdf_path = buat_pdf(hasil_data)
-        with open(pdf_path, "rb") as f:
-            st.download_button("📥 Download PDF Hasil Anak Ini", f, file_name=os.path.basename(pdf_path))
+# Grafik batang
+st.subheader("📊 Visualisasi Status Pertumbuhan")
+try:
+    df_all = pd.read_csv(data_file)
+    kelas_gb = df_all.groupby(['Kelas', 'Jenis Kelamin', 'Status']).size().reset_index(name='Jumlah')
+    pivot_df = kelas_gb.pivot_table(index=['Kelas', 'Jenis Kelamin'], columns='Status', values='Jumlah', fill_value=0).reset_index()
 
-# Tampilkan Data Semua Anak
-if st.session_state.data_anak:
-    st.subheader("📋 Data Semua Anak yang Sudah Diperiksa")
-    df_all = pd.DataFrame(st.session_state.data_anak)
-    st.dataframe(df_all, use_container_width=True)
+    melted = pivot_df.melt(id_vars=['Kelas', 'Jenis Kelamin'], var_name='Status', value_name='Jumlah')
+    chart = alt.Chart(melted).mark_bar().encode(
+        x='Kelas:N',
+        y='Jumlah:Q',
+        color='Status:N',
+        column='Jenis Kelamin:N'
+    ).properties(width=200, height=300)
 
-    csv = df_all.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Download Semua Data (CSV)", csv, file_name="data_semua_anak.csv", mime="text/csv")
-
-    st.subheader("📈 Visualisasi Data Anak Berdasarkan Kelas dan Jenis Kelamin")
-    kelas_gb = df_all.groupby(["Kelas", "Jenis Kelamin", "Status"]).size().unstack(fill_value=0)
-    st.bar_chart(kelas_gb)
+    st.altair_chart(chart)
+except Exception as e:
+    st.info("Belum ada data untuk divisualisasikan.")
