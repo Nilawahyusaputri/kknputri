@@ -40,8 +40,10 @@ def hitung_zscore(umur_bulan, tinggi, gender):
 def klasifikasi_hfa(z):
     if z < -2:
         return "Risiko Stunting", "stunting"
-    elif -2 <= z <= 2:
-        return "Sehat", "normal"
+    elif -2 <= z < -1:
+        return "Perlu Perhatian", "perlu"
+    elif -1 <= z <= 2:
+        return "Normal & Sehat", "normal"
     else:
         return "Risiko Overgrowth", "tinggi"
 
@@ -49,7 +51,10 @@ def saran_tips(status):
     if status == "Risiko Stunting":
         warna = "red"
         tips = "Perbanyak konsumsi makanan tinggi protein seperti telur, ikan, tempe, dan susu. Rutin periksa ke posyandu atau puskesmas."
-    elif status == "Sehat":
+    elif status == "Perlu Perhatian":
+        warna = "yellow"
+        tips = "Tingkatkan asupan nutrisi harian, terutama zat besi, kalsium, dan vitamin. Ajak anak bermain di luar dan tidur cukup."
+    elif status == "Normal & Sehat":
         warna = "green"
         tips = "Pertahankan pola makan bergizi seimbang dan aktivitas fisik yang cukup. Kamu hebat!"
     else:  # Risiko Overgrowth
