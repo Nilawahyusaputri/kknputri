@@ -68,7 +68,12 @@ def buat_pdf(data):
 # Input Data Anak
 with st.form("form_anak"):
     nama = st.text_input("Nama Anak")
-    tgl_lahir = st.date_input("Tanggal Lahir")
+    tgl_lahir = st.date_input(
+        "Tanggal Lahir",
+        value=datetime.date(2015, 6, 1),
+        min_value=datetime.date(2010, 1, 1),
+        max_value=datetime.date.today()
+    )
     gender = st.selectbox("Jenis Kelamin", ["Laki-laki", "Perempuan"])
     tinggi = st.number_input("Tinggi Badan (cm)", min_value=50.0, max_value=200.0)
     berat = st.number_input("Berat Badan (kg)", min_value=5.0, max_value=100.0)
